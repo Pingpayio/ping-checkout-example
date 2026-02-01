@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PingPay Checkout SDK Example</title>
+    <!-- Favicon -->
+    <link rel="icon" href="https://onramp.pingpay.io/favicon.png" type="image/png" sizes="64x64" />
+    <link rel="apple-touch-icon" href="https://onramp.pingpay.io/favicon.png" sizes="180x180" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css"
+    />
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      body {
+        background-color: #121212;
+        color: #fafafa;
+        font-family: "Inter", sans-serif;
+        margin: 0;
+        min-height: 100vh;
+        line-height: 1.6;
+      }
+      #app {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        padding: 40px 20px;
+        width: 100%;
+        text-align: center;
+      }
+      .logo {
+        width: 200px;
+        height: auto;
+        margin-bottom: 30px;
+      }
+      #openCheckoutButton {
+        background-color: #fbfaff;
+        color: #3d315e;
+        border: none;
+        border-radius: 9999px;
+        padding: 10px 20px;
+        font-size: 21px;
+        font-weight: 500;
+        cursor: pointer;
+        margin-bottom: 40px;
+        transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      #openCheckoutButton:hover {
+        background-color: #f5f3ff;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+      }
+      .ping-logo {
+        display: inline-block;
+        width: 77px;
+        height: 20.5px;
+        position: relative;
+        vertical-align: middle;
+      }
+      .ping-logo img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+      #openCheckoutButton:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .code-blurb-container {
+        background-color: #282c34;
+        border-radius: 8px;
+        padding: 1px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        max-width: 800px;
+        width: 100%;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        text-align: left;
+      }
+      .code-blurb-container pre {
+        margin: 0;
+        padding: 15px; /* Padding inside pre for code */
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier,
+          monospace;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      #errorMessages {
+        color: #ff4d4d;
+        margin-top: 10px;
+        font-size: 14px;
+      }
+      .loading {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid #3d315e;
+        border-radius: 50%;
+        border-top-color: transparent;
+        animation: spin 0.8s linear infinite;
+        margin-right: 8px;
+        vertical-align: middle;
+      }
+      #openCheckoutButton:disabled .loading {
+        border-color: #3d315e;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      /* Callback result styles */
+      .callback-container {
+        max-width: 700px;
+        width: 100%;
+        text-align: center;
+      }
+      .callback-icon {
+        font-size: 64px;
+        margin-bottom: 20px;
+      }
+      .callback-title {
+        font-size: 32px;
+        font-weight: 700;
+        margin-bottom: 16px;
+      }
+      .callback-message {
+        font-size: 18px;
+        color: #b0b0b0;
+        margin-bottom: 30px;
+      }
+      .callback-details {
+        background-color: #282c34;
+        border-radius: 8px;
+        padding: 20px;
+        margin-top: 20px;
+        text-align: left;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .callback-details h3 {
+        margin-bottom: 16px;
+        font-size: 18px;
+        color: #fafafa;
+      }
+      .callback-details div {
+        display: grid;
+        gap: 12px;
+        font-size: 14px;
+        margin-bottom: 20px;
+      }
+      .callback-details code {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: monospace;
+        word-break: break-all;
+      }
+      .callback-details .note {
+        margin-top: 20px;
+        padding-top: 20px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        font-size: 12px;
+        color: #b0b0b0;
+      }
+      .callback-details a {
+        color: #ab9ff2;
+        font-weight: 500;
+        text-decoration: none;
+      }
+      .callback-details a:hover {
+        text-decoration: underline;
+      }
+      .callback-button {
+        background-color: #ab9ff2;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 12px 24px;
+        font-size: 18px;
+        font-weight: 500;
+        cursor: pointer;
+        margin-top: 30px;
+        transition: background-color 0.3s ease;
+      }
+      .callback-button:hover {
+        background-color: #9382e0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <img
+        src="https://onramp.pingpay.io/ping-pay-logo.png"
+        alt="PingPay Logo"
+        class="logo"
+      />
+      <button id="openCheckoutButton">Pay with <span class="ping-logo"><img src="/logo.png" alt="Ping" /></span></button>
+      
+      <div class="code-blurb-container">
+        <pre><code class="language-typescript">
+// 1. Create Checkout Session
+const response = await fetch('https://pay.pingpay.io/api/checkout/sessions', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'x-api-key': 'YOUR_API_KEY', // Get this from your PingPay dashboard
+  },
+  body: JSON.stringify({
+    amount: '1000000', // 1 USDC (6 decimals: 1 * 10^6 = 1000000)
+    asset: {
+      chain: 'NEAR',
+      symbol: 'USDC',
+    },
+    successUrl: 'https://yoursite.com/success',
+    cancelUrl: 'https://yoursite.com/cancel',
+  }),
+});
+
+const { sessionUrl, session } = await response.json();
+
+// Redirect user to checkout page
+window.location.href = sessionUrl;
+        </code></pre>
+      </div>
+
+      <div class="code-blurb-container">
+        <pre><code class="language-typescript">
+// 2. Create Webhook Endpoint (one-time setup)
+const webhookResponse = await fetch('https://pay.pingpay.io/api/rpc/webhooks.createEndpoint', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'x-api-key': 'YOUR_API_KEY',
+  },
+  body: JSON.stringify({
+    url: 'https://yoursite.com/webhooks/pingpay',
+    events: [
+      'payment.success',
+      'payment.failed'
+    ],
+  }),
+});
+
+const { endpoint, secret } = await webhookResponse.json();
+// Save the secret securely - you'll need it to verify webhook signatures
+console.log('Webhook endpoint created:', endpoint.id);
+console.log('Webhook secret:', secret); // Store this securely!
+        </code></pre>
+      </div>
+
+      <div class="code-blurb-container">
+        <pre><code class="language-typescript">
+// 3. Verify Webhook Signature (Node.js/Express example)
+import crypto from 'crypto';
+
+function verifyWebhookSignature(
+  payload: string,
+  timestamp: string,
+  signature: string,
+  secret: string
+): boolean {
+  const signaturePayload = `${timestamp}.${payload}`;
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(signaturePayload)
+    .digest('hex');
+  
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expectedSignature)
+  );
+}
+        </code></pre>
+      </div>
+
+      <div class="code-blurb-container">
+        <pre><code class="language-typescript">
+// 4. Handle Webhook Events (Express.js example)
+app.post('/webhooks/pingpay', express.raw({ type: 'application/json' }), (req, res) => {
+  const payload = req.body.toString('utf8');
+  const timestamp = req.headers['x-ping-timestamp'];
+  const signature = req.headers['x-ping-signature'];
+  const eventType = req.headers['x-ping-event-type'];
+  
+  // Verify signature
+  if (!verifyWebhookSignature(payload, timestamp, signature, WEBHOOK_SECRET)) {
+    return res.status(401).send('Invalid signature');
+  }
+  
+  const event = JSON.parse(payload);
+  
+  // Handle different event types
+  switch (eventType) {
+    case 'payment.success':
+      // Payment completed successfully
+      console.log('Payment successful:', event.data.paymentId);
+      // Update your database, send confirmation email, etc.
+      break;
+      
+    case 'payment.failed':
+      // Payment failed or was refunded
+      console.log('Payment failed:', event.data.paymentId);
+      // Notify customer, handle refund logic, etc.
+      break;
+  }
+  
+  res.status(200).send('Webhook received');
+});
+        </code></pre>
+      </div>
+      <div id="errorMessages"></div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script>
+      hljs.highlightAll();
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
