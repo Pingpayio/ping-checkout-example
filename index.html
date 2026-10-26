@@ -83,6 +83,47 @@
         opacity: 0.6;
         cursor: not-allowed;
       }
+      .checkout-variants {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: center;
+        max-width: 720px;
+        margin: -24px auto 36px;
+      }
+      .checkout-variants button {
+        background-color: transparent;
+        color: #fbfaff;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 9999px;
+        padding: 8px 16px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        font-family: inherit;
+        transition: background-color 0.2s ease, border-color 0.2s ease;
+      }
+      .checkout-variants button:hover {
+        background-color: rgba(171, 159, 242, 0.15);
+        border-color: #ab9ff2;
+      }
+      .checkout-variants button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .checkout-variants-label {
+        width: 100%;
+        font-size: 13px;
+        color: #b0b0b0;
+        margin-bottom: 4px;
+        line-height: 1.5;
+      }
+      .checkout-variants-label code {
+        font-size: 12px;
+        background: rgba(255, 255, 255, 0.08);
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
       .code-blurb-container {
         background-color: #282c34;
         border-radius: 8px;
@@ -96,7 +137,7 @@
       }
       .code-blurb-container pre {
         margin: 0;
-        padding: 15px; /* Padding inside pre for code */
+        padding: 15px;
         white-space: pre-wrap;
         word-wrap: break-word;
         font-family:
@@ -127,7 +168,6 @@
       @keyframes spin {
         to { transform: rotate(360deg); }
       }
-      /* Callback result styles */
       .callback-container {
         max-width: 700px;
         width: 100%;
@@ -213,6 +253,16 @@
         class="logo"
       />
       <button id="openCheckoutButton">Pay with <span class="ping-logo"><img src="/logo.png" alt="Ping" /></span></button>
+      <div class="checkout-variants">
+        <div class="checkout-variants-label">
+          Sessions send <code>customerReference: "merchant-demo"</code> so you can filter them on the dashboard.
+          The button above omits <code>paymentMethods</code>, so checkout offers wallet, card, and deposit.
+          Pass <code>paymentMethods</code> to limit them — one method skips the picker:
+        </div>
+        <button type="button" data-checkout-methods="wallet">Wallet only</button>
+        <button type="button" data-display-mode="popup">Pay in a popup</button>
+      </div>
+      <p id="checkoutStatus" style="display:none; max-width:720px; margin:-16px auto 24px; color:#ab9ff2;"></p>
       
       <div class="code-blurb-container">
         <pre><code class="language-typescript">
@@ -231,13 +281,47 @@ const response = await fetch('https://pay.pingpay.io/api/checkout/sessions', {
     },
     successUrl: 'https://yoursite.com/success',
     cancelUrl: 'https://yoursite.com/cancel',
+    customerReference: 'merchant-demo',
+    displayMode: 'popup', // or omit for a full-page redirect
+    // payerAccountId: 'alice.near', // hint only; the wallet still approves inside Ping
+    merchantOrigin: 'https://yoursite.com',
+    // Omit paymentMethods to offer wallet, card, and deposit (wallet is primary).
+    paymentMethods: ['wallet'], // example: one method skips the picker
+    // paymentMethods: ['wallet', 'deposit'], // two methods: wallet primary, deposit secondary
+    // confidential: false, // payments use confidential swaps by default; set false to opt out
+    fees: [
+      {
+        type: 'royalty',
+        label: 'Creator',
+        recipient: 'creator.near',
+        bps: 500, // 5.00%
+      },
+      {
+        type: 'affiliate',
+        label: 'Partner',
+        recipient: 'partner.near',
+        bps: 250, // 2.50%
+      },
+    ],
   }),
 });
 
 const { sessionUrl, session } = await response.json();
 
-// Redirect user to checkout page
+// session.fees includes your request fees plus Ping's platform fee
 window.location.href = sessionUrl;
+// Popup: openPingCheckout({ sessionUrl, mode: 'popup', onSuccess, onCancel })
+// Do not set noopener. See src/ping-checkout.ts.
+
+// Notes:
+// - fees is optional
+// - paymentMethods is optional; omit it to offer wallet, card, and deposit
+// - one method skips the picker; with two or three, wallet is primary if included, otherwise deposit
+// - recipient must be a valid NEAR account
+// - bps = basis points (100 = 1%, 500 = 5%)
+// - Ping adds its own 0.5% platform fee automatically
+// - total fees cannot exceed 20% (2000 bps), including Ping's fee
+// - if the same recipient appears multiple times, fees are merged
         </code></pre>
       </div>
 

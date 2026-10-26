@@ -1,3 +1,14 @@
+import { openPingCheckout, preparePingCheckoutPopup } from './ping-checkout';
+
+type CheckoutFeeType = 'royalty' | 'platform' | 'affiliate' | 'service' | 'custom';
+
+interface CheckoutFee {
+  type: CheckoutFeeType;
+  label: string;
+  recipient: string;
+  bps: number; // basis points: 100 = 1%, 500 = 5%
+}
+
 interface CreateCheckoutSessionInput {
   amount: string;
   asset: {
@@ -7,6 +18,19 @@ interface CreateCheckoutSessionInput {
   successUrl?: string;
   cancelUrl?: string;
   metadata?: Record<string, unknown>;
+  fees?: CheckoutFee[];
+  /** Confidential swap on/off; defaults to on. Pass false for a public swap. */
+  confidential?: boolean;
+  /** Enabled checkout methods. Omitted → wallet, deposit, and card. */
+  paymentMethods?: Array<'wallet' | 'card' | 'deposit'>;
+  /** Merchant-scoped customer org key for payment list filters. */
+  customerReference?: string;
+  /** redirect (default) leaves the merchant page. popup keeps it open. */
+  displayMode?: 'redirect' | 'popup';
+  /** NEAR account hint only. Does not sign the payer in. */
+  payerAccountId?: string;
+  /** Origin allowed to receive checkout postMessage events. */
+  merchantOrigin?: string;
 }
 
 interface CreateCheckoutSessionResponse {
@@ -21,6 +45,7 @@ interface CreateCheckoutSessionResponse {
     }
     createdAt: string;
     expiresAt?: string;
+    fees?: CheckoutFee[];
   };
   sessionUrl: string;
 }
@@ -60,12 +85,13 @@ function showError(message: string) {
 
 function showLoading(button: HTMLButtonElement) {
   button.disabled = true;
+  button.dataset.originalHtml ??= button.innerHTML;
   button.innerHTML = '<span class="loading"></span> Creating session...';
 }
 
 function hideLoading(button: HTMLButtonElement) {
   button.disabled = false;
-  button.innerHTML = 'Pay with <span class="ping-logo"><img src="/logo.png" alt="Ping" /></span>';
+  button.innerHTML = button.dataset.originalHtml || button.innerHTML;
 }
 
 /**
@@ -190,38 +216,91 @@ document.addEventListener('DOMContentLoaded', () => {
   const cancelUrl = `${currentUrl.origin}${currentUrl.pathname}?callback=cancel`;
 
   checkoutButton.addEventListener('click', async () => {
-    showLoading(checkoutButton);
+    await startCheckout(checkoutButton);
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('[data-checkout-methods], [data-display-mode]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const raw = button.dataset.checkoutMethods ?? '';
+      const paymentMethods = raw
+        ? (raw.split(',').map((method) => method.trim()) as Array<'wallet' | 'card' | 'deposit'>)
+        : undefined;
+      const displayMode = button.dataset.displayMode === 'popup' ? 'popup' : 'redirect';
+      await startCheckout(button, paymentMethods, displayMode);
+    });
+  });
+
+  function showCheckoutStatus(message: string) {
+    const status = document.getElementById('checkoutStatus');
+    if (!status) return;
+    status.textContent = message;
+    status.style.display = 'block';
+  }
+
+  async function startCheckout(
+    button: HTMLButtonElement,
+    paymentMethods?: Array<'wallet' | 'card' | 'deposit'>,
+    displayMode: 'redirect' | 'popup' = 'redirect'
+  ) {
+    showLoading(button);
     showError('');
 
+    const popup = displayMode === 'popup' ? preparePingCheckoutPopup() : null;
+    if (displayMode === 'popup' && !popup) {
+      showCheckoutStatus('Popup blocked. Continuing in this tab.');
+    }
+
     try {
-      // Hardcoded demo values - 1 USDC
-      // Note: Recipient address is now configured in organization settings, not passed here
       const orderId = `order_${Date.now()}`;
       const input: CreateCheckoutSessionInput = {
-        amount: '1000000', // 1 USDC (6 decimals: 1 * 10^6 = 1000000)
+        amount: '2000000',
         asset: {
           chain: 'NEAR',
           symbol: 'USDC',
         },
         successUrl: successUrl,
         cancelUrl: cancelUrl,
+        customerReference: 'merchant-demo',
+        displayMode,
+        merchantOrigin: displayMode === 'popup' ? currentUrl.origin : undefined,
         metadata: {
           orderId: orderId,
           productName: 'NEAR Merch T-Shirt',
           customerEmail: 'demo@example.com',
+          paymentMethodsPreview: paymentMethods?.join(',') || 'default',
         },
+        paymentMethods,
       };
 
       const response = await createCheckoutSession(apiUrl, input);
-
-      // Redirect directly to checkout URL
-      window.location.href = response.sessionUrl;
+      const opened = openPingCheckout({
+        sessionUrl: response.sessionUrl,
+        mode: displayMode,
+        popup,
+        onSuccess: (message) => {
+          showCheckoutStatus(`Payment succeeded (${message.paymentId ?? message.sessionId}).`);
+        },
+        onFailure: (message) => {
+          showCheckoutStatus(`Payment failed (${message.sessionId}).`);
+          hideLoading(button);
+        },
+        onCancel: () => {
+          showCheckoutStatus('Checkout closed.');
+          hideLoading(button);
+        },
+        onBlocked: () => {
+          showCheckoutStatus('Popup blocked. Continuing in this tab.');
+        },
+      });
+      if (opened.blocked || displayMode === 'redirect') return;
+      hideLoading(button);
     } catch (error) {
+      popup?.close();
       console.error('Error creating checkout session:', error);
       showError(
         `Failed to create checkout session: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
-      hideLoading(checkoutButton);
+      hideLoading(button);
     }
-  });
+  }
 });
