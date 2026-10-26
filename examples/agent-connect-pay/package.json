@@ -1,0 +1,11 @@
+{
+  "name": "ping-agent-connect-pay-example",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Example: Agent Connect MCP wallet pays Ping Agent Pay on staging (x402)",
+  "type": "module",
+  "scripts": {
+    "check": "bun run pay-staging.ts check",
+    "pay": "bun run pay-staging.ts pay"
+  }
+}
