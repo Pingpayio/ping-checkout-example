@@ -271,23 +271,151 @@ const response = await fetch('https://pay.pingpay.io/api/checkout/sessions', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
-    'x-api-key': 'YOUR_API_KEY',
+    'x-api-key': 'YOUR_API_KEY', // Get this from your PingPay dashboard
   },
   body: JSON.stringify({
-    amount: '1000000',
-    asset: { chain: 'NEAR', symbol: 'USDC' },
+    amount: '1000000', // 1 USDC (6 decimals: 1 * 10^6 = 1000000)
+    asset: {
+      chain: 'NEAR',
+      symbol: 'USDC',
+    },
     successUrl: 'https://yoursite.com/success',
     cancelUrl: 'https://yoursite.com/cancel',
     customerReference: 'merchant-demo',
-    displayMode: 'popup',
+    displayMode: 'popup', // or omit for a full-page redirect
+    // payerAccountId: 'alice.near', // hint only; the wallet still approves inside Ping
     merchantOrigin: 'https://yoursite.com',
-    paymentMethods: ['wallet'],
+    // Omit paymentMethods to offer wallet, card, and deposit (wallet is primary).
+    paymentMethods: ['wallet'], // example: one method skips the picker
+    // paymentMethods: ['wallet', 'deposit'], // two methods: wallet primary, deposit secondary
+    // confidential: false, // payments use confidential swaps by default; set false to opt out
+    fees: [
+      {
+        type: 'royalty',
+        label: 'Creator',
+        recipient: 'creator.near',
+        bps: 500, // 5.00%
+      },
+      {
+        type: 'affiliate',
+        label: 'Partner',
+        recipient: 'partner.near',
+        bps: 250, // 2.50%
+      },
+    ],
   }),
+});
+
+const { sessionUrl, session } = await response.json();
+
+// session.fees includes your request fees plus Ping's platform fee
+window.location.href = sessionUrl;
+// Popup: openPingCheckout({ sessionUrl, mode: 'popup', onSuccess, onCancel })
+// Do not set noopener. See src/ping-checkout.ts.
+
+// Notes:
+// - fees is optional
+// - paymentMethods is optional; omit it to offer wallet, card, and deposit
+// - one method skips the picker; with two or three, wallet is primary if included, otherwise deposit
+// - recipient must be a valid NEAR account
+// - bps = basis points (100 = 1%, 500 = 5%)
+// - Ping adds its own 0.5% platform fee automatically
+// - total fees cannot exceed 20% (2000 bps), including Ping's fee
+// - if the same recipient appears multiple times, fees are merged
+        </code></pre>
+      </div>
+
+      <div class="code-blurb-container">
+        <pre><code class="language-typescript">
+// 2. Create Webhook Endpoint (one-time setup)
+const webhookResponse = await fetch('https://pay.pingpay.io/api/rpc/webhooks.createEndpoint', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'x-api-key': 'YOUR_API_KEY',
+  },
+  body: JSON.stringify({
+    url: 'https://yoursite.com/webhooks/pingpay',
+    events: [
+      'payment.success',
+      'payment.failed'
+    ],
+  }),
+});
+
+const { endpoint, secret } = await webhookResponse.json();
+// Save the secret securely - you'll need it to verify webhook signatures
+console.log('Webhook endpoint created:', endpoint.id);
+console.log('Webhook secret:', secret); // Store this securely!
+        </code></pre>
+      </div>
+
+      <div class="code-blurb-container">
+        <pre><code class="language-typescript">
+// 3. Verify Webhook Signature (Node.js/Express example)
+import crypto from 'crypto';
+
+function verifyWebhookSignature(
+  payload: string,
+  timestamp: string,
+  signature: string,
+  secret: string
+): boolean {
+  const signaturePayload = `${timestamp}.${payload}`;
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(signaturePayload)
+    .digest('hex');
+  
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expectedSignature)
+  );
+}
+        </code></pre>
+      </div>
+
+      <div class="code-blurb-container">
+        <pre><code class="language-typescript">
+// 4. Handle Webhook Events (Express.js example)
+app.post('/webhooks/pingpay', express.raw({ type: 'application/json' }), (req, res) => {
+  const payload = req.body.toString('utf8');
+  const timestamp = req.headers['x-ping-timestamp'];
+  const signature = req.headers['x-ping-signature'];
+  const eventType = req.headers['x-ping-event-type'];
+  
+  // Verify signature
+  if (!verifyWebhookSignature(payload, timestamp, signature, WEBHOOK_SECRET)) {
+    return res.status(401).send('Invalid signature');
+  }
+  
+  const event = JSON.parse(payload);
+  
+  // Handle different event types
+  switch (eventType) {
+    case 'payment.success':
+      // Payment completed successfully
+      console.log('Payment successful:', event.data.paymentId);
+      // Update your database, send confirmation email, etc.
+      break;
+      
+    case 'payment.failed':
+      // Payment failed or was refunded
+      console.log('Payment failed:', event.data.paymentId);
+      // Notify customer, handle refund logic, etc.
+      break;
+  }
+  
+  res.status(200).send('Webhook received');
 });
         </code></pre>
       </div>
       <div id="errorMessages"></div>
     </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script>
+      hljs.highlightAll();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
