@@ -1,102 +1,175 @@
-# PingPay Checkout Merchant Demo
+# PingPay Checkout Examples
 
-This is an example merchant application demonstrating how to integrate PingPay Checkout into your application.
+This repository contains two related examples:
 
-## How It Works
+| Path | What it demonstrates |
+|------|----------------------|
+| **Repository root** | Hosted **merchant checkout** — create a session via REST, redirect or open a popup, handle success/cancel callbacks |
+| **`examples/agent-connect-pay/`** | **Agent payer** staging script — an [Agent Connect](https://agent-connect-app-production.up.railway.app/docs/overview) MCP wallet pays a Ping Agent Pay x402 challenge on staging |
 
-1. **Create a Checkout Session**: Call the `POST /checkout/sessions` API endpoint with payment details
-2. **Get Session URL**: The API returns a `sessionUrl` that you can redirect users to
-3. **User Completes Payment**: The user is redirected to the checkout page where they:
-   - Connect their NEAR wallet
-   - Review payment details
-   - Complete the payment
-4. **Redirect Back**: After payment completion, the user is redirected to your `successUrl` or `cancelUrl`
+---
 
-## Configuration
+## Merchant hosted checkout (root)
 
-Before running the demo, you need to set up environment variables. Create a `.env` file in the root directory:
+Example merchant application showing how to integrate PingPay Checkout into your site.
+
+### How it works
+
+1. **Create a checkout session** — `POST /checkout/sessions` with payment details
+2. **Get `sessionUrl`** — redirect the shopper or open it in a popup
+3. **User completes payment** — wallet, card, or deposit on Ping’s checkout page
+4. **Return to your site** — full-page redirect to `successUrl` / `cancelUrl`, or `postMessage` when using popup mode
+
+### Configuration
+
+Create a `.env` file in the repository root:
 
 ```bash
 VITE_API_URL=https://pay.pingpay.io
 VITE_API_KEY=your_api_key_here
 ```
 
-You can get your API key from your [PingPay dashboard](https://pay.pingpay.io/dashboard).
+Get your API key from the [PingPay dashboard](https://pay.pingpay.io/dashboard). The **recipient** address is configured in your organization settings, not in the session request.
 
-**Note:** The recipient address must be configured in your organization settings on the PingPay dashboard.
+### Running the demo
 
-## Running the Demo
-
-1. Install dependencies:
 ```bash
 bun install
-```
-
-2. Set up your environment variables (see Configuration section above)
-
-3. Start the development server:
-```bash
 bun run dev
 ```
 
-4. Open the app in your browser (usually `http://localhost:5173`)
+Open the app (usually `http://localhost:5173`). Use **Pay with Ping** for the default flow, **Wallet only** to pass `paymentMethods: ['wallet']`, or **Pay in a popup** for `displayMode: 'popup'`.
 
-5. Click "Pay with Ping" to create a checkout session and redirect to the payment page
+Build for production:
 
-## API Integration Example
+```bash
+bun run build
+```
+
+### API integration example
 
 ```typescript
 const response = await fetch('https://pay.pingpay.io/api/checkout/sessions', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
-    'x-api-key': 'YOUR_API_KEY', // Get this from your PingPay dashboard
+    'x-api-key': 'YOUR_API_KEY',
   },
   body: JSON.stringify({
-    amount: '1000000', // 1 USDC (6 decimals: 1 * 10^6 = 1000000) - string in smallest units
+    amount: '1000000', // 1 USDC (6 decimals) — string in smallest units
     asset: {
       chain: 'NEAR',
-      symbol: 'USDC', // API will resolve this to assetId automatically
+      symbol: 'USDC', // API resolves to assetId automatically
     },
     successUrl: 'https://yoursite.com/success',
     cancelUrl: 'https://yoursite.com/cancel',
-    metadata: {
-      orderId: 'order_123',
-      productName: 'Product Name',
-      customerEmail: 'customer@example.com',
-    },
+    customerReference: 'my-store', // optional; filter payments in the dashboard
+    // Omit paymentMethods to offer wallet, card, and deposit.
+    paymentMethods: ['wallet'], // example: skip picker, wallet only
+    fees: [
+      {
+        type: 'royalty',
+        label: 'Creator',
+        recipient: 'creator.near',
+        bps: 500, // 5.00%
+      },
+    ],
   }),
 });
 
 const { sessionUrl, session } = await response.json();
-
-// Redirect user to checkout page
 window.location.href = sessionUrl;
 ```
 
-**Important:** 
-- All API requests require the `x-api-key` header with your API key
-- The recipient address is configured in your organization settings, not in the checkout session request
-- The API URL is `https://pay.pingpay.io/api`
+### Popup checkout
 
-## Checkout URL Format
+`displayMode` defaults to `redirect`. Set it to `popup` to keep the shopper on your page. `sessionUrl` is the same either way.
 
-The checkout URL format is:
+```typescript
+displayMode: 'popup',
+merchantOrigin: 'https://yoursite.com', // origin only; derived from successUrl when omitted
+payerAccountId: 'alice.near', // optional hint, not a signer
+```
+
+Open the popup synchronously from the click handler, then navigate it after `createSession` returns. Use `src/ping-checkout.ts`:
+
+```typescript
+const popup = preparePingCheckoutPopup();
+const { sessionUrl } = await createSession(...);
+openPingCheckout({
+  sessionUrl,
+  mode: 'popup',
+  popup,
+  onSuccess: (message) => {}, // { source: 'pingpay', type: 'checkout.success', sessionId, paymentId? }
+  onCancel: () => {},
+  onFailure: (message) => {},
+});
+```
+
+Ping posts `{ source: 'pingpay', type: 'checkout.success' | 'checkout.failure', sessionId, paymentId? }` to `merchantOrigin` and then closes the popup. Cancel is the shopper closing the window before a result — there is no `checkout.cancel` payload. If the browser blocks the popup, the helper redirects this tab and calls `onBlocked`.
+
+Do not pass `noopener` to `window.open`. Checkout needs `window.opener` to report the result.
+
+Card payments navigate inside the popup (Ping → Coinbase → Ping). They should not open a second window.
+
+#### NEAR login is not shared
+
+Ping checkout runs on Ping’s origin, so it cannot read a Wallet Selector session on your site. `payerAccountId` is a label inside checkout (“Suggested account alice.near”). It does not select the wallet or sign anything. The payer still connects and approves from the Ping window.
+
+### Fees (optional)
+
+The `fees` parameter adds per-checkout splits for royalties, affiliates, or partners:
+
+```typescript
+fees: [
+  {
+    type: 'royalty', // 'royalty' | 'platform' | 'affiliate' | 'service' | 'custom'
+    label: 'Creator Royalty',
+    recipient: 'creator.near',
+    bps: 500, // 100 = 1%, 500 = 5%
+  },
+]
+```
+
+- `fees` is optional
+- `recipient` must be a valid NEAR account ID
+- Ping adds its own platform fee automatically (0.5%)
+- Total includes Ping fee + dashboard merchant fees + request fees
+- Duplicate recipients are merged and their `bps` values are summed
+
+### Checkout URL format
+
 ```
 https://pay.pingpay.io/checkout?sessionId={sessionId}
 ```
 
-Or for local development:
+Local development (when running Ping’s checkout UI locally):
+
 ```
 http://localhost:5173/checkout?sessionId={sessionId}
 ```
 
-## Notes
+### Notes
 
-- Make sure you have set up your `VITE_API_KEY` environment variable
-- The API URL is `https://pay.pingpay.io/api`
-- The checkout page requires users to connect their NEAR wallet
-- Payments are processed through NEAR intents for cross-chain compatibility
-- The session expires after 1 hour by default
-- The recipient address is configured in your organization settings on the PingPay dashboard
+- All API requests require the `x-api-key` header
+- Sessions expire after about one hour by default
+- Payments use NEAR Intents for cross-chain compatibility
 
+---
+
+## Agent Connect payer (`examples/agent-connect-pay`)
+
+Standalone Bun example: an **Agent Connect MCP** wallet pays a **Ping Agent Pay** x402 challenge on staging.
+
+Flow: Ping `prepare` → gross-up `withdraw_preview` → `withdraw` → poll `get_operation` for `destination_tx_hash` → Ping `verify` / `settle`.
+
+See [`examples/agent-connect-pay/README.md`](examples/agent-connect-pay/README.md) for setup (Agent Connect API key, staging Ping API key, env vars) and commands:
+
+```bash
+cd examples/agent-connect-pay
+bun install
+bun run check                 # read-only preflight
+bun run pay -- --confirm      # real withdraw + verify/settle (Base mainnet)
+```
+
+This is example glue only — not production payer infrastructure.
