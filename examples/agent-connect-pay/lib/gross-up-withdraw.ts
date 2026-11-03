@@ -21,6 +21,25 @@ const POLICY_WARNING_CODES = new Set([
   'high_fee',
 ]);
 
+/** Agent Connect may return `{ data: { quote, … } }` instead of top-level `quote`. */
+export function normalizeWithdrawPreview(raw: unknown): WithdrawPreviewQuote {
+  if (!raw || typeof raw !== 'object') return {};
+  const top = raw as Record<string, unknown>;
+  if (top.quote && typeof top.quote === 'object') {
+    return top as WithdrawPreviewQuote;
+  }
+  const data = top.data;
+  if (data && typeof data === 'object') {
+    const nested = data as Record<string, unknown>;
+    return {
+      quote: nested.quote as WithdrawPreviewQuote['quote'],
+      spend: nested.spend as WithdrawPreviewQuote['spend'],
+      warnings: (top.warnings ?? nested.warnings) as WithdrawPreviewQuote['warnings'],
+    };
+  }
+  return top as WithdrawPreviewQuote;
+}
+
 export function blockingPolicyWarnings(preview: WithdrawPreviewQuote): string[] {
   const warnings = preview.warnings ?? [];
   return warnings
@@ -57,13 +76,15 @@ export async function grossUpWithdrawPreview(
 
   for (let i = 0; i < args.maxPreviews; i++) {
     previewsUsed++;
-    lastPreview = await mcp.callTool<WithdrawPreviewQuote>('withdraw_preview', {
-      account: args.account,
-      token: args.token,
-      amount: sourceAmount.toString(),
-      chain: args.chain,
-      to: args.to,
-    });
+    lastPreview = normalizeWithdrawPreview(
+      await mcp.callTool<unknown>('withdraw_preview', {
+        account: args.account,
+        token: args.token,
+        amount: sourceAmount.toString(),
+        chain: args.chain,
+        to: args.to,
+      }),
+    );
 
     const blocks = blockingPolicyWarnings(lastPreview);
     if (blocks.length) {
